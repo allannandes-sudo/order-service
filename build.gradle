@@ -1,0 +1,131 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.4.3'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id "org.sonarqube" version "4.0.0.2929"
+	id 'jacoco'
+	id 'idea'
+}
+
+ext {
+	set('junit', "4.13.1")
+}
+
+group = 'br.com.foursales'
+version = '1.0.0'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+
+	// Autenticação JWT
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+	// Swagger
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0'
+
+	// Feign Client para comunicação entre microsserviços
+	implementation("org.springframework.cloud:spring-cloud-starter-openfeign:3.1.0")
+
+	// Banco de Dados MySQL
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// Kafka
+	implementation 'org.springframework.kafka:spring-kafka'
+
+	// Elasticsearch
+	implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
+
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// MapStruct para mapeamento de DTOs
+	implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+	annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+	annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+
+	// Testes
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation "junit:junit:${junit}"
+}
+
+test {
+	systemProperty "user.language", "en"
+	systemProperty "user.country", "US"
+	useJUnitPlatform()
+}
+
+def jacocoExclusion = [
+		'**/annotation/**',
+		'**/swagger/**',
+		'**/config/**',
+		'**/entity/**',
+		'**/exception/**',
+		'**/mapper/**',
+		'**/model/**',
+		'**/repository/**',
+		'**/enums/**',
+		'**/kafka/payload/**',
+		'**/Application.java',
+		'src/test/java/**'
+]
+
+jacocoTestReport {
+	dependsOn(test)
+
+	getExecutionData()
+			.setFrom(fileTree(buildDir)
+					.include("/jacoco/test.exec")
+			)
+
+	reports {
+		xml.required.set(true)
+		html.required.set(true)
+	}
+	afterEvaluate {
+		classDirectories.setFrom(files(classDirectories.files.collect {
+			fileTree(dir: it, exclude: jacocoExclusion)
+		}))
+	}
+}
+
+check {
+	dependsOn jacocoTestCoverageVerification
+}
+
+project.tasks["sonarqube"].dependsOn("jacocoTestReport")
+
+sonarqube {
+	properties {
+		property "sonar.tests", "src/test/java"
+		property "sonar.exclusions", jacocoExclusion.join(",")
+	}
+}
+
+tasks.withType(Test) {
+	reports {
+		junitXml.required.set(true)
+		html.required.set(true)
+	}
+	useJUnitPlatform()
+	systemProperty "user.language", "en"
+	systemProperty "user.country", "US"
+}
