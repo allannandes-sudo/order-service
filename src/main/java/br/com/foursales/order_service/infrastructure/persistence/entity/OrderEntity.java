@@ -3,6 +3,8 @@ package br.com.foursales.order_service.infrastructure.persistence.entity;
 import br.com.foursales.order_service.domain.model.enums.OrderStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -32,6 +34,7 @@ public class OrderEntity {
     private String userId;
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItemEntity> items;
+    @Enumerated(EnumType.STRING)
     private OrderStatus status;
     private BigDecimal totalAmount;
     private LocalDateTime createdAt;

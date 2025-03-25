@@ -160,7 +160,13 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Pedido já foi pago ou cancelado!");
         }
 
-        // Atualizar status para PAGO
+        // Calcular o totalAmount
+        BigDecimal totalAmount = orderEntity.getItems().stream()
+                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Atualizar o totalAmount e o status para PAGO
+        orderEntity.setTotalAmount(totalAmount);
         orderEntity.setStatus(OrderStatus.PAID);
         orderRepository.save(orderEntity);
 
