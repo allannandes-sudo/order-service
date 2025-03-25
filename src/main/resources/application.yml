@@ -1,5 +1,5 @@
 server:
-  port: 8083
+  port: 8084
 
 spring:
   datasource:
@@ -31,10 +31,32 @@ spring:
 
 
   kafka:
-    bootstrap-servers: kafka:29092
+    bootstrap-servers: localhost:9092
+    producer:
+      retries: 5
+      retry-backoff-ms: 300
+      acks: all
+      batch-size: 16384
+      linger-ms: 50
+      buffer-memory: 33554432
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.trusted.packages: '*'
     consumer:
       group-id: order-service-group
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        spring.json.trusted.packages: '*'
+
 
 jwt:
   secret: MINHA_CHAVE_SECRETA_AQUI_UMA_STRING_GRANDE_E_SEGURA
   expiration: 3600000  # 1 hora
+
+
+product:
+  service:
+    url: http://localhost:8082/api
