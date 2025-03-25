@@ -1,0 +1,157 @@
+version: '3.8'
+
+networks:
+  my_network:
+    driver: bridge
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - my_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "29092:29092"
+      - "9092:9092"
+    networks:
+      - my_network
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    container_name: kafdrop
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKER_CONNECT: kafka:29092
+      KAFKA_PROPERTIES: consumer.request.timeout.ms=5000
+    ports:
+      - "9000:9000"
+    networks:
+      - my_network
+
+  mongodb:
+    image: mongo:5.0
+    container_name: mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - my_network
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    depends_on:
+      - mongodb
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: password
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: novoUsuario
+      ME_CONFIG_BASICAUTH_PASSWORD: novaSenha
+    ports:
+      - "8083:8083"
+    networks:
+      - my_network
+
+  mysql:
+    image: mysql:8
+    container_name: mysql_container
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: senha123
+      MYSQL_DATABASE: auth_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user123
+    ports:
+      - "3306:3306"
+    volumes:
+      - projects_mysql_data:/var/lib/mysql
+    networks:
+      - my_network
+      
+  mysql-product:
+    image: mysql:8
+    container_name: mysql_product
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: senha123
+      MYSQL_DATABASE: product_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user123
+    ports:
+      - "3308:3306"
+    volumes:
+      - product_mysql_data:/var/lib/mysql
+    networks:
+      - my_network
+      
+  mysql-order:
+    image: mysql:8
+    container_name: mysql_order
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: senha123
+      MYSQL_DATABASE: order_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user123
+    ports:
+      - "3309:3306"
+    volumes:
+      - order_mysql_data:/var/lib/mysql
+    networks:
+      - my_network      
+      
+  sonarqube:
+    container_name: sonarqube
+    image: sonarqube:10.0-community
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    ports:
+      - "9001:9000"
+    networks:
+      - my_network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.5
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    networks:
+      - my_network
+
+volumes:
+  mongo-data:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  projects_mysql_data:
+  product_mysql_data:
+  order_mysql_data:
