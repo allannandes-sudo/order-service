@@ -7,16 +7,16 @@ import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Data
 @Builder
-//@ToString(exclude = "order")
 @EqualsAndHashCode
 @AllArgsConstructor
 @NoArgsConstructor
 public class OrderItem {
-    private Long productId;
+    private UUID productId;
     private int quantity;
     private BigDecimal unitPrice;
-//    private Order order;
+    private BigDecimal totalAmount;
 }

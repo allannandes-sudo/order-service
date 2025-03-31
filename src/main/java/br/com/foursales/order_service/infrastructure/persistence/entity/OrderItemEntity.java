@@ -16,26 +16,30 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
-@Table(name = "order_items") // Nome da tabela no banco
+@Table(name = "order_items")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrderItemEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "order_id", nullable = false) // Relacionamento com pedido
+    @JoinColumn(name = "order_id", nullable = false)
     private OrderEntity order;
 
     @Column(nullable = false)
-    private Long productId; // ID do produto
+    private UUID productId;
 
     @Column(nullable = false)
     private Integer quantity;
 
     @Column(nullable = false)
-    private BigDecimal price; // Preço do produto no momento da compra
+    private BigDecimal price;
+
+    @Column(nullable = false)
+    private BigDecimal totalAmount;
+
 }

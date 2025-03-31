@@ -1,13 +1,17 @@
 package br.com.foursales.order_service.infrastructure.persistence.mapper;
 
+import br.com.foursales.order_service.application.dto.OrderItemRequest;
 import br.com.foursales.order_service.domain.model.Order;
 import br.com.foursales.order_service.domain.model.OrderItem;
 import br.com.foursales.order_service.infrastructure.persistence.entity.OrderEntity;
 import br.com.foursales.order_service.infrastructure.persistence.entity.OrderItemEntity;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
-@Mapper(componentModel = "spring")
+import java.util.List;
+
+@Mapper(componentModel = "spring",unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface OrderMapper {
 
     @Mapping(target = "id", source = "in.id")
@@ -26,9 +30,15 @@ public interface OrderMapper {
     @Mapping(target = "createdAt", source = "orderEntity.createdAt")
     Order toDto(OrderEntity orderEntity);
 
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "order", ignore = true)
     @Mapping(target = "price", source = "unitPrice")
     OrderItemEntity toEntityOrderItem (OrderItem in);
 
     @Mapping(target = "unitPrice", source = "price")
     OrderItem toEntityOrderItem (OrderItemEntity in);
+
+    List<OrderItem> toOrderItems(List<OrderItemRequest> items);
+
+
 }

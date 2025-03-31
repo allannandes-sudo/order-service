@@ -7,13 +7,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 public class OrderItemRequest {
     @NotNull(message = "O ID do produto é obrigatório")
-    private Long productId;
+    private UUID productId;
 
     @Min(value = 1, message = "A quantidade deve ser pelo menos 1")
     private int quantity;

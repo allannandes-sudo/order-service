@@ -5,14 +5,12 @@ import br.com.foursales.order_service.infrastructure.config.FeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
-//@FeignClient(name = "product-service", url = "${product.service.url}", configuration = FeignConfig.class)
 @FeignClient(
         name = "product-service",
         url = "${product.service.url}",
@@ -21,8 +19,6 @@ import java.util.Map;
 )
 public interface ProductClient {
     @GetMapping("/stock-check")
-    ResponseEntity<Map<Long, ProductStockResponse>> checkStock(@RequestParam List<Long> productIds);
+    ResponseEntity<Map<UUID, ProductStockResponse>> checkStock(@RequestParam List<UUID> productIds);
 
-    @PutMapping("/update-stock")
-    void updateStock(@RequestBody Map<Long, Integer> stockUpdates);
 }

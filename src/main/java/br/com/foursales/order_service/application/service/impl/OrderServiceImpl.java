@@ -4,8 +4,10 @@ import br.com.foursales.order_service.application.dto.CreateOrderRequest;
 import br.com.foursales.order_service.application.event.dto.OrderCreatedEvent;
 import br.com.foursales.order_service.application.event.dto.OrderItemEvent;
 import br.com.foursales.order_service.application.event.dto.OrderPaidEvent;
+import br.com.foursales.order_service.application.event.mapper.OrderEventMapper;
 import br.com.foursales.order_service.application.event.producer.OrderKafkaProducer;
 import br.com.foursales.order_service.application.service.OrderService;
+import br.com.foursales.order_service.domain.exception.BusinessException;
 import br.com.foursales.order_service.domain.exception.UserNotAuthenticatedException;
 import br.com.foursales.order_service.domain.model.Order;
 import br.com.foursales.order_service.domain.model.OrderItem;
@@ -17,6 +19,7 @@ import br.com.foursales.order_service.infrastructure.persistence.mapper.OrderMap
 import br.com.foursales.order_service.infrastructure.persistence.repository.OrderRepository;
 import br.com.foursales.order_service.infrastructure.security.dto.CustomAuthenticationToken;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +31,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static java.util.stream.Collectors.toList;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
@@ -36,35 +42,52 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final OrderKafkaProducer kafkaProducer;
     private final OrderMapper orderMapper;
-
+    private final OrderEventMapper orderEventMapper;
 
     @Override
     @Transactional
     public Order createOrder(CreateOrderRequest request) {
+        log.info("Starting createOrder method");
         UUID orderId = UUID.randomUUID();
-        String userId = getAuthenticatedUserId(); // Obtém o ID do usuário autenticado
+        String userId = getAuthenticatedUserId();
 
-        // Converte itens da requisição para o domínio
-        List<OrderItem> items = request.getItems().stream()
-                .map(item -> {
-                    OrderItem orderItem = new OrderItem();
-                    orderItem.setProductId(item.getProductId());
-                    orderItem.setQuantity(item.getQuantity());
-                    return orderItem;
-                })
-                .toList();
+        List<OrderItem> items = orderMapper.toOrderItems(request.getItems());
+        validateStockAvailability(items);
 
-        // Verifica estoque via Feign Client
-        List<Long> productIds = items.stream()
+        calculateTotalAmountForItems(items);
+
+        BigDecimal totalOrderAmount = calculateTotalOrderAmount(items);
+
+        Order order = buildOrder(orderId, userId, items, totalOrderAmount);
+
+        OrderEntity savedOrder = saveOrder(order);
+
+        publishOrderCreatedEvent(savedOrder);
+
+        log.info("Finished createOrder method");
+        return orderMapper.toDto(savedOrder);
+    }
+
+    private void calculateTotalAmountForItems(List<OrderItem> items) {
+        items.forEach(item -> {
+            if (item.getUnitPrice() != null) {
+                item.setTotalAmount(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            } else {
+                item.setTotalAmount(BigDecimal.ZERO);
+            }
+        });
+    }
+
+    private void validateStockAvailability(List<OrderItem> items) {
+        List<UUID> productIds = items.stream()
                 .map(OrderItem::getProductId)
                 .toList();
 
-        Map<Long, ProductStockResponse> stockStatus = productClient.checkStock(productIds).getBody();
+        Map<UUID, ProductStockResponse> stockStatus = productClient.checkStock(productIds).getBody();
         if (stockStatus == null || stockStatus.values().stream().anyMatch(response -> response.getStock() <= 0)) {
             throw new RuntimeException("Produto sem estoque disponível!");
         }
 
-// Atualiza o preço unitário de cada item
         items.forEach(item -> {
             ProductStockResponse productStockResponse = stockStatus.get(item.getProductId());
             if (productStockResponse != null) {
@@ -74,37 +97,38 @@ public class OrderServiceImpl implements OrderService {
                 throw new RuntimeException("Informações do produto não encontradas para o ID: " + item.getProductId());
             }
         });
+    }
 
-        // Cria o pedido com status PENDING
+    private BigDecimal calculateTotalOrderAmount(List<OrderItem> items) {
+        return items.stream()
+                .map(OrderItem::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private Order buildOrder(UUID orderId, String userId, List<OrderItem> items, BigDecimal totalOrderAmount) {
         Order order = new Order();
         order.setId(orderId);
         order.setUserId(userId);
         order.setItems(items);
         order.setStatus(OrderStatus.PENDING);
-        order.setTotalAmount(BigDecimal.ZERO); // O total será calculado após o pagamento
+        order.setTotalAmount(totalOrderAmount);
         order.setCreatedAt(LocalDateTime.now());
+        return order;
+    }
 
-        // Converte o pedido para entidade e associa os itens ao pedido
+    private OrderEntity saveOrder(Order order) {
         OrderEntity orderEntity = orderMapper.toEntity(order);
-        orderEntity.getItems().forEach(item -> item.setOrder(orderEntity)); // Associa cada item ao pedido
+        orderEntity.getItems().forEach(item -> item.setOrder(orderEntity));
+        return orderRepository.save(orderEntity);
+    }
 
-        // Salva no banco
-        OrderEntity savedOrder = orderRepository.save(orderEntity);
-
-        // Publica evento Kafka
-        List<OrderItemEvent> orderItemEvents = savedOrder.getItems().stream()
-                .map(item -> new OrderItemEvent(item.getProductId(), item.getQuantity()))
-                .toList();
+    private void publishOrderCreatedEvent(OrderEntity savedOrder) {
+        List<OrderItemEvent> orderItemEvents = orderEventMapper.toOrderItemEvents(savedOrder.getItems());
 
         OrderCreatedEvent event = new OrderCreatedEvent(savedOrder.getId(), orderItemEvents);
         kafkaProducer.publishOrderCreatedEvent(event);
-
-        return orderMapper.toDto(savedOrder);
     }
 
-    /**
-     * Obtém o ID do usuário autenticado do contexto de segurança.
-     */
     private String getAuthenticatedUserId() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof CustomAuthenticationToken customAuthToken) {
@@ -114,70 +138,84 @@ public class OrderServiceImpl implements OrderService {
         throw new UserNotAuthenticatedException("Usuário não autenticado");
     }
 
-
     @Override
     public Order getOrderById(UUID orderId) {
         return orderRepository.findById(orderId)
                 .map(orderMapper::toDto)
-                .orElseThrow(() -> new RuntimeException("Pedido não encontrado!"));
+                .orElseThrow(() -> new BusinessException("Pedido não encontrado!"));
     }
 
     @Override
     public List<Order> getAllOrders() {
         return orderRepository.findAll().stream()
                 .map(orderMapper::toDto)
-                .collect(Collectors.toList());
+                .collect(toList());
     }
 
     @Override
     @Transactional
-    public Order updateOrder(Order order) {
-        if (!orderRepository.existsById(order.getId())) {
-            throw new RuntimeException("Pedido não encontrado para atualização!");
-        }
-
-        OrderEntity updatedOrder = orderRepository.save(orderMapper.toEntity(order));
-        return orderMapper.toDto(updatedOrder);
+    public Order cancelOrder(UUID orderId) {
+        return orderRepository.findById(orderId)
+                .map(orderEntity -> {
+                    if (orderEntity.getStatus() == OrderStatus.PAID) {
+                        throw new BusinessException("Pedido já foi pago e não pode ser cancelado!");
+                    }
+                    orderEntity.setStatus(OrderStatus.CANCELED);
+                    return orderRepository.save(orderEntity);
+                })
+                .map(orderMapper::toDto)
+                .orElseThrow(() -> new BusinessException("Pedido não encontrado!"));
     }
 
-    @Override
-    @Transactional
-    public void deleteOrder(UUID orderId) {
-        if (!orderRepository.existsById(orderId)) {
-            throw new RuntimeException("Pedido não encontrado para exclusão!");
-        }
-
-        orderRepository.deleteById(orderId);
-    }
 
     @Override
     @Transactional
     public Order payOrder(UUID orderId) {
         OrderEntity orderEntity = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Pedido não encontrado!"));
-
-        if (!orderEntity.getStatus().equals(OrderStatus.PENDING)) {
-            throw new RuntimeException("Pedido já foi pago ou cancelado!");
+                .orElseThrow(() -> new BusinessException("Pedido não encontrado!"));
+        validateOrderStatus(orderEntity);
+        if (!isStockAvailable(orderEntity)) {
+            cancelOrder(orderEntity);
+            throw new BusinessException("Produto sem estoque disponível! Pedido foi cancelado.");
         }
-
-        // Calcular o totalAmount
-        BigDecimal totalAmount = orderEntity.getItems().stream()
-                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Atualizar o totalAmount e o status para PAGO
-        orderEntity.setTotalAmount(totalAmount);
-        orderEntity.setStatus(OrderStatus.PAID);
-        orderRepository.save(orderEntity);
-
-        // Criar eventos para cada item do pedido
-        List<OrderItemEvent> orderItemEvents = orderEntity.getItems().stream()
-                .map(item -> new OrderItemEvent(item.getProductId(), item.getQuantity()))
-                .collect(Collectors.toList());
-
-        OrderPaidEvent event = new OrderPaidEvent(orderEntity.getId(), orderItemEvents);
-        kafkaProducer.publishOrderPaidEvent(event);
-
+        updateOrderStatusToPaid(orderEntity);
+        publishOrderPaidEvent(orderEntity);
         return orderMapper.toDto(orderEntity);
     }
+
+    private void validateOrderStatus(OrderEntity orderEntity) {
+        if (!orderEntity.getStatus().equals(OrderStatus.PENDING)) {
+            throw new BusinessException("Pedido já foi pago ou cancelado!");
+        }
+    }
+
+    private boolean isStockAvailable(OrderEntity orderEntity) {
+        List<OrderItem> orderItems = orderEntity.getItems().stream()
+                .map(orderMapper::toEntityOrderItem)
+                .collect(Collectors.toList());
+
+        try {
+            validateStockAvailability(orderItems);
+            return true;
+        } catch (BusinessException e) {
+            return false;
+        }
+    }
+
+    private void cancelOrder(OrderEntity orderEntity) {
+        orderEntity.setStatus(OrderStatus.CANCELED);
+        orderRepository.save(orderEntity);
+    }
+
+    private void updateOrderStatusToPaid(OrderEntity orderEntity) {
+        orderEntity.setStatus(OrderStatus.PAID);
+        orderRepository.save(orderEntity);
+    }
+
+    private void publishOrderPaidEvent(OrderEntity orderEntity) {
+        List<OrderItemEvent> orderItemEvents = orderEventMapper.toOrderItemEvents(orderEntity.getItems());
+        OrderPaidEvent event = new OrderPaidEvent(orderEntity.getId(), orderItemEvents);
+        kafkaProducer.publishOrderPaidEvent(event);
+    }
+
 }

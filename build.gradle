@@ -53,8 +53,6 @@ dependencies {
 	// Kafka
 	implementation 'org.springframework.kafka:spring-kafka'
 
-	// Elasticsearch
-	implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
 
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
